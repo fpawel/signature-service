@@ -14,7 +14,6 @@ info:
 
 schemes:
   - http
-host: localhost
 basePath: /
 consumes:
   - application/json

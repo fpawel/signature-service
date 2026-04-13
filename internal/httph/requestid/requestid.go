@@ -41,6 +41,7 @@ func Handler(h http.Handler) http.Handler {
 		}
 		ctx := NewContext(r.Context(), rid)
 		ctx = slogctx.With(ctx, "request-id", rid)
+		w.Header().Set("X-Request-ID", rid)
 		h.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

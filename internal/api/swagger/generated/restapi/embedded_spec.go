@@ -30,7 +30,6 @@ func init() {
     "title": "Signature Service",
     "version": "1.0.0"
   },
-  "host": "localhost",
   "basePath": "/",
   "paths": {
     "/devices": {
@@ -507,7 +506,6 @@ func init() {
     "title": "Signature Service",
     "version": "1.0.0"
   },
-  "host": "localhost",
   "basePath": "/",
   "paths": {
     "/devices": {
