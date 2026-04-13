@@ -11,14 +11,17 @@ import (
 	slogctx "github.com/veqryn/slog-context"
 )
 
-const maxLoggedBody = 4096
-
 func Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log := slogctx.FromCtx(r.Context())
 
 		args := requestArgs(r)
-		log.With(args...).Debug("⚔️  HTTP START  "+r.Method+" "+r.URL.Path, "header", r.Header)
+		reqHeaders := filterHeaders(r.Header, requestHeaderWhitelist)
+		if len(reqHeaders) > 0 {
+			args = append(args, "request_headers", reqHeaders)
+		}
+
+		log.With(args...).Debug("⚔️  HTTP START  " + r.Method + " " + r.URL.Path)
 
 		tmStart := time.Now()
 
@@ -37,15 +40,18 @@ func Handler(next http.Handler) http.Handler {
 			logLevel = slog.LevelWarn
 		}
 
-		args = append(requestArgs(r), "duration", time.Since(tmStart).String())
+		args = append(requestArgs(r),
+			"duration", time.Since(tmStart).String(),
+			"status", status,
+			"response_size", humanize.Bytes(uint64(lrw.size)),
+		)
 
-		if lrw.wroteHeader {
-			args = append(args,
-				"status", status,
-				"response_size", humanize.Bytes(uint64(lrw.size)))
-			if lrw.body.Len() > 0 {
-				args = append(args, "body", sanitizeForLog(lrw.body.String()))
-			}
+		if respHeaders := filterHeaders(lrw.responseHeaders(), responseHeaderWhitelist); len(respHeaders) > 0 {
+			args = append(args, "response_headers", respHeaders)
+		}
+
+		if lrw.body.Len() > 0 {
+			args = append(args, "body", sanitizeForLog(lrw.body.String()))
 		}
 
 		log.With(args...).Log(r.Context(), logLevel, "⚔️  HTTP FINISH "+r.Method+" "+r.URL.Path)
@@ -61,10 +67,11 @@ func requestArgs(r *http.Request) (args []any) {
 
 type loggingResponseWriter struct {
 	http.ResponseWriter
-	status      int
-	size        int
-	wroteHeader bool
-	body        bytes.Buffer
+	status                 int
+	size                   int
+	wroteHeader            bool
+	body                   bytes.Buffer
+	capturedResponseHeader http.Header
 }
 
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
@@ -73,6 +80,7 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	}
 	lrw.wroteHeader = true
 	lrw.status = code
+	lrw.capturedResponseHeader = cloneHeader(lrw.ResponseWriter.Header())
 	lrw.ResponseWriter.WriteHeader(code)
 }
 
@@ -81,7 +89,6 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 		lrw.WriteHeader(http.StatusOK)
 	}
 	if lrw.status >= 400 {
-		// Сохраняем только первые N байт, чтобы не тащить в лог огромные ответы.
 		remain := maxLoggedBody - lrw.body.Len()
 		if remain > 0 {
 			if len(b) > remain {
@@ -107,15 +114,76 @@ func (lrw *loggingResponseWriter) Flush() {
 	}
 }
 
+func (lrw *loggingResponseWriter) responseHeaders() http.Header {
+	if lrw.capturedResponseHeader != nil {
+		return lrw.capturedResponseHeader
+	}
+	return cloneHeader(lrw.ResponseWriter.Header())
+}
+
+func filterHeaders(h http.Header, whitelist map[string]struct{}) http.Header {
+	if len(h) == 0 {
+		return nil
+	}
+
+	out := make(http.Header)
+	for k, vv := range h {
+		ck := http.CanonicalHeaderKey(k)
+		if _, ok := whitelist[ck]; !ok {
+			continue
+		}
+		out[ck] = append([]string(nil), vv...)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func cloneHeader(h http.Header) http.Header {
+	if len(h) == 0 {
+		return nil
+	}
+	cp := make(http.Header, len(h))
+	for k, vv := range h {
+		cp[k] = append([]string(nil), vv...)
+	}
+	return cp
+}
+
 func sanitizeForLog(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
 	}
 	s = strings.Trim(s, "\"")
-
 	s = strings.ReplaceAll(s, "\n", `\n`)
 	s = strings.ReplaceAll(s, "\r", `\r`)
-
 	return s
+}
+
+const maxLoggedBody = 4096
+
+var requestHeaderWhitelist = map[string]struct{}{
+	"Accept":           {},
+	"Accept-Encoding":  {},
+	"Authorization":    {},
+	"Content-Type":     {},
+	"User-Agent":       {},
+	"X-Correlation-Id": {},
+	"Traceparent":      {},
+	"Tracestate":       {},
+}
+
+var responseHeaderWhitelist = map[string]struct{}{
+	"Content-Type":                 {},
+	"Content-Length":               {},
+	"Location":                     {},
+	"Retry-After":                  {},
+	"WWW-Authenticate":             {},
+	"X-Correlation-Id":             {},
+	"Traceparent":                  {},
+	"Access-Control-Allow-Origin":  {},
+	"Access-Control-Allow-Headers": {},
+	"Access-Control-Allow-Methods": {},
 }
