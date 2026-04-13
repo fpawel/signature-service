@@ -1,0 +1,378 @@
+swagger: "2.0"
+info:
+  title: Signature Service
+  version: "1.0.0"
+  description: |
+    Minimal API specification for the signature service coding challenge.
+
+    The service creates signature devices and uses them to sign transaction data.
+    For each signing request, the service constructs and signs the following value:
+
+      <signature_counter>_<data_to_be_signed>_<last_signature_base64_encoded>
+
+    For the first signature of a device, `last_signature` is `base64(device_id)`.
+
+schemes:
+  - http
+host: localhost
+basePath: /
+consumes:
+  - application/json
+produces:
+  - application/json
+
+paths:
+  /devices:
+    post:
+      summary: Create a signature device
+      description: |
+        Creates a signature device.
+
+        The request provides the device ID, the signature algorithm, and an optional label.
+        A new key pair is generated and assigned to the device during creation.
+      operationId: CreateSignatureDevice
+      parameters:
+        - name: body
+          in: body
+          required: true
+          description: Signature device creation payload.
+          schema:
+            $ref: "#/definitions/CreateSignatureDeviceRequest"
+      responses:
+        "201":
+          description: Signature device created.
+          schema:
+            $ref: "#/definitions/SignatureDeviceResponse"
+        "400":
+          description: Invalid request.
+          schema:
+            type: string
+        "409":
+          description: Device already exists.
+          schema:
+            type: string
+        "500":
+          description: Internal server error.
+          schema:
+            type: string
+
+    get:
+      summary: List signature devices
+      description: |
+        Returns all signature devices known to the service.
+
+        This endpoint provides the retrieval/list operation for previously created signature devices.
+      operationId: ListSignatureDevices
+      responses:
+        "200":
+          description: Signature devices returned.
+          schema:
+            $ref: "#/definitions/SignatureDeviceListResponse"
+        "500":
+          description: Internal server error.
+          schema:
+            type: string
+
+  /devices/{deviceId}:
+    get:
+      summary: Get a signature device
+      description: |
+        Returns the current state of a single signature device.
+      operationId: GetSignatureDevice
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: Signature device ID.
+          type: string
+          format: uuid
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      responses:
+        "200":
+          description: Signature device returned.
+          schema:
+            $ref: "#/definitions/SignatureDevice"
+        "404":
+          description: Device not found.
+          schema:
+            type: string
+        "500":
+          description: Internal server error.
+          schema:
+            type: string
+
+  /devices/{deviceId}/signatures:
+    post:
+      summary: Create a signature
+      description: |
+        Creates a signature for the provided transaction data using the specified device.
+
+        The response contains the base64-encoded signature and the exact `signed_data` value
+        that was signed.
+      operationId: SignTransaction
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: Signature device ID.
+          type: string
+          format: uuid
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        - name: body
+          in: body
+          required: true
+          description: Transaction data to sign.
+          schema:
+            $ref: "#/definitions/SignTransactionRequest"
+      responses:
+        "201":
+          description: Signature created.
+          schema:
+            $ref: "#/definitions/SignatureResponse"
+        "400":
+          description: Invalid request.
+          schema:
+            type: string
+        "404":
+          description: Device not found.
+          schema:
+            type: string
+        "500":
+          description: Internal server error.
+          schema:
+            type: string
+
+    get:
+      summary: List signatures for a device
+      description: |
+        Returns all signatures created with the specified device in creation order.
+      operationId: ListDeviceSignatures
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: Signature device ID.
+          type: string
+          format: uuid
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      responses:
+        "200":
+          description: Signatures returned.
+          schema:
+            $ref: "#/definitions/SignatureListResponse"
+        "404":
+          description: Device not found.
+          schema:
+            type: string
+        "500":
+          description: Internal server error.
+          schema:
+            type: string
+
+  /devices/{deviceId}/signatures/{signatureId}:
+    get:
+      summary: Get a signature
+      description: |
+        Returns a single signature created with the specified device.
+      operationId: GetDeviceSignature
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: Signature device ID.
+          type: string
+          format: uuid
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        - name: signatureId
+          in: path
+          required: true
+          description: Signature ID.
+          type: string
+          format: uuid
+          pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      responses:
+        "200":
+          description: Signature returned.
+          schema:
+            $ref: "#/definitions/Signature"
+        "404":
+          description: Device or signature not found.
+          schema:
+            type: string
+        "500":
+          description: Internal server error.
+          schema:
+            type: string
+
+definitions:
+  CreateSignatureDeviceRequest:
+    type: object
+    description: Request payload for signature device creation.
+    required:
+      - id
+      - algorithm
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        format: uuid
+        description: Unique device identifier.
+        pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        x-nullable: false
+      algorithm:
+        type: string
+        description: Signature algorithm assigned to the device.
+        enum: [ECC, RSA]
+        x-nullable: false
+      label:
+        type: string
+        description: Optional human-readable device label.
+        minLength: 1
+        x-nullable: false
+
+  SignTransactionRequest:
+    type: object
+    description: Request payload for signature creation.
+    required:
+      - data
+    additionalProperties: false
+    properties:
+      data:
+        type: string
+        description: Raw transaction data to sign.
+        minLength: 1
+        x-nullable: false
+
+  SignatureDeviceResponse:
+    type: object
+    description: Signature device creation result.
+    required:
+      - id
+      - public_key_pem
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        format: uuid
+        description: Device ID.
+        x-nullable: false
+      public_key_pem:
+        type: string
+        description: Public key in PEM format.
+        x-nullable: false
+
+  SignatureResponse:
+    type: object
+    description: Signature creation result.
+    required:
+      - signature
+      - signed_data
+    additionalProperties: false
+    properties:
+      signature:
+        type: string
+        description: Base64-encoded signature.
+        x-nullable: false
+      signed_data:
+        type: string
+        description: Secured data string that was signed.
+        x-nullable: false
+
+  SignatureDevice:
+    type: object
+    description: Stored representation of a signature device.
+    required:
+      - id
+      - algorithm
+      - label
+      - signature_counter
+      - last_signature
+      - public_key_pem
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        format: uuid
+        description: Device ID.
+        x-nullable: false
+      algorithm:
+        type: string
+        description: Signature algorithm assigned to the device.
+        enum: [ECC, RSA]
+        x-nullable: false
+      label:
+        type: string
+        description: Human-readable device label.
+        x-nullable: false
+      signature_counter:
+        type: integer
+        format: int64
+        description: Number of signatures produced by this device.
+        x-nullable: false
+      last_signature:
+        type: string
+        description: Base64-encoded previous signature, or base64(device_id) before the first signature.
+        x-nullable: false
+      public_key_pem:
+        type: string
+        description: Public key in PEM format.
+        x-nullable: false
+
+  SignatureDeviceListResponse:
+    type: object
+    description: List of signature devices.
+    required:
+      - items
+    additionalProperties: false
+    properties:
+      items:
+        type: array
+        items:
+          $ref: "#/definitions/SignatureDevice"
+
+  Signature:
+    type: object
+    description: Stored representation of a created signature.
+    required:
+      - id
+      - device_id
+      - counter
+      - signature
+      - signed_data
+    additionalProperties: false
+    properties:
+      id:
+        type: string
+        format: uuid
+        description: Signature ID.
+        x-nullable: false
+      device_id:
+        type: string
+        format: uuid
+        description: Signature device ID.
+        x-nullable: false
+      counter:
+        type: integer
+        format: int64
+        description: Signature counter value used in signed_data.
+        x-nullable: false
+      signature:
+        type: string
+        description: Base64-encoded signature bytes.
+        x-nullable: false
+      signed_data:
+        type: string
+        description: Exact secured data string that was signed.
+        x-nullable: false
+
+  SignatureListResponse:
+    type: object
+    description: List of signatures for a device.
+    required:
+      - items
+    additionalProperties: false
+    properties:
+      items:
+        type: array
+        items:
+          $ref: "#/definitions/Signature"
