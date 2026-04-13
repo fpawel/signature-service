@@ -135,11 +135,7 @@ func (s *Service) ListSignatureDevices(p operations.ListSignatureDevicesParams) 
 
 	items := make([]*models.SignatureDevice, 0, len(devices))
 	for _, dev := range devices {
-		publicKeyPEM, err := signing.EncodePublicKeyPEM(dev.PrivateKey)
-		if err != nil {
-			return operations.NewListSignatureDevicesInternalServerError().WithPayload(err.Error())
-		}
-		item := newSignatureDeviceModel(dev, publicKeyPEM)
+		item := newSignatureDeviceModel(dev, dev.PublicKeyPem)
 		items = append(items, item)
 	}
 
@@ -167,12 +163,7 @@ func (s *Service) GetSignatureDevice(p operations.GetSignatureDeviceParams) midd
 		return operations.NewGetSignatureDeviceInternalServerError().WithPayload(err.Error())
 	}
 
-	publicKeyPEM, err := signing.EncodePublicKeyPEM(dev.PrivateKey)
-	if err != nil {
-		return operations.NewGetSignatureDeviceInternalServerError().WithPayload(err.Error())
-	}
-
-	item := newSignatureDeviceModel(dev, publicKeyPEM)
+	item := newSignatureDeviceModel(dev, dev.PublicKeyPem)
 
 	return operations.NewGetSignatureDeviceOK().WithPayload(item)
 }
